@@ -1,0 +1,6 @@
+trys=10
+host=8.8.8.8
+requests=5
+max_size=10000
+time_out=0.23
+increment=500

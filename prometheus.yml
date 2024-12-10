@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "latency-app"
+    static_configs:
+      - targets: ["latency-app:8001"]
+
+  - job_name: "sort-app"
+    static_configs:
+      - targets: ["sort-app:8000"]
