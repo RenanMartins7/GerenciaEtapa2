@@ -1,6 +1,5 @@
 import os
 import time
-import httpx
 import numpy as np
 import random
 import socket
@@ -9,30 +8,39 @@ import ping3
 
 from fastapi import FastAPI, Query, Request
 
+from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+
 from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import \
-    OTLPSpanExporter as OTLPSpanExporterHTTP
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as OTLPSpanExporterHTTP
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-from prometheus_fastapi_instrumentator import Instrumentator
-from prometheus_client import Counter, Histogram
+from opentelemetry import metrics
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
+resource = Resource(attributes={
+    SERVICE_NAME: "SORT_API"
+})
 
-endpoint = os.getenv(
-    "OTEL_EXPORTER_OTLP_ENDPOINT", "http://host.docker.internal:4318/v1/traces"
-)
 
 os.environ["OTEL_SERVICE_NAME"] = "sortApi"
 
-provider = TracerProvider()
+provider = TracerProvider(resource=resource)
 processor = BatchSpanProcessor(
-    OTLPSpanExporterHTTP(endpoint=endpoint)  # trocar pra env
+    OTLPSpanExporterHTTP(endpoint="http://op-otel-collector-1:4321/v1/traces")  # trocar pra env
 )
-provider.add_span_processor(processor)
-
-# Sets the global default tracer provider
+provider.add_span_processor(processor)  
 trace.set_tracer_provider(provider)
+
+reader = PeriodicExportingMetricReader(
+    OTLPMetricExporter(endpoint="http://op-otel-collector-1:4321/v1/metrics")
+)
+meterProvider = MeterProvider(resource=resource, metric_readers=[reader])
+metrics.set_meter_provider(meterProvider)
+
+
 
 # Creates a tracer from the global tracer provider
 tracer = trace.get_tracer("api.tracer")
@@ -40,10 +48,10 @@ tracer = trace.get_tracer("api.tracer")
 
 app = FastAPI()
 # Prometheus exporter
-Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+#Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 #Prometheus Metrics collectors
-
+"""
 request_count = Counter(
     "sort_total_requests",
     "Numero total de requisições processadas pela funcao sort",
@@ -54,7 +62,7 @@ request_sort = Histogram(
     "Latencia nas requisicoes",
     ["method","endpoint"]
 )
-
+"""
 
 
 #Bubblesort implementation
@@ -173,7 +181,7 @@ def sortComparison(size:int, time_out: float, increment: int,  parent_span):
 
 
 
-
+"""
 @app.middleware("http")
 async def add_metrics(request: Request, call_next):
     start_time = time.time()
@@ -190,7 +198,7 @@ async def add_metrics(request: Request, call_next):
     ).observe(process_time)
 
     return response
-
+"""
     
 
 @app.get("/sort")
