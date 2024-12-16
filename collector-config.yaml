@@ -5,13 +5,26 @@ receivers:
         endpoint: 0.0.0.0:4320
       http:
         endpoint: 0.0.0.0:4321
+
 exporters:
   debug:
     verbosity: detailed
   otlphttp:
     endpoint: http://op-jaeger-1:4318
+  prometheus:
+    endpoint: "op-otel-collector-1:9464"
+    send_timestamps: true
+    metric_expiration: 180m
+    enable_open_metrics: true
+    add_metric_suffixes: false
+    resource_to_telemetry_conversion:
+      enabled: true
+
 service:
   pipelines:
     traces:
       receivers: [otlp]
       exporters: [otlphttp]
+    metrics:
+      receivers: [otlp]
+      exporters: [prometheus]

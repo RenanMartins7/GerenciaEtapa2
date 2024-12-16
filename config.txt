@@ -2,5 +2,10 @@ trys=10
 host=8.8.8.8
 requests=5
 max_size=10000
-time_out=0.23
+time_out=0.5
 increment=500
+payload_size=65000
+pi_seconds = 0.4
+target=1000000
+object_count=100000
+

@@ -9,32 +9,44 @@ services:
     environment:
       COLLECTOR_OTLP_ENABLED: 1
 
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yaml
+
+
   otel-collector:
     image: otel/opentelemetry-collector:latest
     ports:
       - "4320:4320" # OTLP gRPC
       - "4321:4321" # OTLP HTTP
+      - "9464:9464"
     volumes:
       - ./collector-config.yaml:/etc/otel/config.yaml
     command: ["--config=/etc/otel/config.yaml"]
     depends_on:
       - jaeger
+      - prometheus
 
-  latency-app:
+
+  api_1:
     build:
         context: .
-        dockerfile: DockerfileLatency
+        dockerfile: DockerfileApi1
     ports:
-      - "8001:8001"
+      - "8000:8000"
     depends_on:
       - otel-collector
 
-  sort-app:
+
+  api_2:
     build: 
         context: .
-        dockerfile: DockerfileSort
+        dockerfile: DockerfileApi2
     ports:
-      - "8000:8000"
+      - "8001:8001"
     depends_on:
       - otel-collector
 
