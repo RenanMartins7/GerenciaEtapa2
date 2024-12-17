@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: collector-config
+  namespace: opentelemetry
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4320
+          http:
+            endpoint: 0.0.0.0:4321
+
+    exporters:
+      debug:
+        verbosity: detailed
+      otlphttp:
+        endpoint: http://jaeger:4318
+      prometheus:
+        endpoint: 0.0.0.0:9464
+        send_timestamps: true
+        metric_expiration: 180m
+        enable_open_metrics: true
+        add_metric_suffixes: false
+        resource_to_telemetry_conversion:
+          enabled: true
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          exporters: [otlphttp]
+        metrics:
+          receivers: [otlp]
+          exporters: [prometheus]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collector
+  namespace: opentelemetry
+  labels:
+    app: collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: collector
+  template:
+    metadata:
+      labels:
+        app: collector
+    spec:
+      containers:
+        - name: collector-container
+          image: otel/opentelemetry-collector:latest
+          # command: ["otelcol"] # Replace with the binary name, if required
+          args: ["--config=/etc/otel/config.yaml"]
+          ports:
+            - containerPort: 4320 # OTLP gRPC
+            - containerPort: 4321 # OTLP HTTP
+            - containerPort: 9464
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/otel/
+      volumes:
+        - name: config-volume
+          configMap:
+            name: collector-config
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  namespace: opentelemetry
+  labels:
+    app: jaeger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+  template:
+    metadata:
+      labels:
+        app: jaeger
+    spec:
+      containers:
+        - name: jaeger-container
+          image: jaegertracing/all-in-one:latest
+          ports:
+            - containerPort: 4317 # otlp grpc
+            - containerPort: 4318 # otlp http
+            - containerPort: 6831
+              protocol: UDP
+            - containerPort: 16686
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-endpoint
+  namespace: opentelemetry
+  labels:
+    app: api-endpoint
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-endpoint
+  template:
+    metadata:
+      labels:
+        app: api-endpoint
+    spec:
+      containers:
+        - name: api-endpoint-container
+          image: matheusmcosta/gerencia2
+          env:
+            - name: METRICS_ENDPOINT
+              value: http://collector:4321/v1/metrics
+            - name: TRACES_ENDPOINT
+              value: http://collector:4321/v1/traces
+          ports:
+            - containerPort: 8000
+---

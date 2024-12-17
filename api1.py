@@ -1,51 +1,50 @@
 import os
-import time
-import httpx
-import numpy as np
 import random
 import socket
+import time
+
+import httpx
+import numpy as np
 import ping3
-
-
 from fastapi import FastAPI, Query, Request
-
+from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import \
+    OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import \
+    OTLPSpanExporter as OTLPSpanExporterHTTP
+from opentelemetry.metrics import get_meter
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
-
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as OTLPSpanExporterHTTP
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-from opentelemetry import metrics
-from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-
-from opentelemetry.metrics import get_meter
-
-
-
-resource = Resource(attributes={
-    SERVICE_NAME: "Api_1"
-})
+resource = Resource(attributes={SERVICE_NAME: "Api_1"})
 
 
 os.environ["OTEL_SERVICE_NAME"] = "ap1"
 
+traces_endpoint = os.getenv(
+    "TRACES_ENDPOINT", "http://op-otel-collector-1:4321/v1/traces"
+)
+
+metrics_endpoint = os.getenv(
+    "METRICS_ENDPOINT", "http://op-otel-collector-1:4321/v1/metrics"
+)
+
 provider = TracerProvider(resource=resource)
 processor = BatchSpanProcessor(
-    OTLPSpanExporterHTTP(endpoint="http://op-otel-collector-1:4321/v1/traces")  # trocar pra env
+    OTLPSpanExporterHTTP(endpoint=traces_endpoint)  # trocar pra env
 )
-provider.add_span_processor(processor)  
+provider.add_span_processor(processor)
 trace.set_tracer_provider(provider)
 
 
 reader = PeriodicExportingMetricReader(
-    OTLPMetricExporter(endpoint="http://op-otel-collector-1:4321/v1/metrics")
+    OTLPMetricExporter(endpoint=metrics_endpoint), export_interval_millis=1000
 )
 meterProvider = MeterProvider(resource=resource, metric_readers=[reader])
 metrics.set_meter_provider(meterProvider)
-
 
 
 # Creates a tracer from the global tracer provider
@@ -56,67 +55,84 @@ app = FastAPI()
 
 meter = metrics.get_meter("Api_1")
 request_count = meter.create_counter(
-    "api_1_total_requests",
-    unit = "1",
-    description = "Number of processed requests"
+    "api_1_total_requests", unit="1", description="Number of processed requests"
 )
-
-request_count.add(1, attributes={"method:": "GET", "endpoint": "/latency"})
-
-
 
 
 async def connectionTest(host: str, parent_span, size: int) -> float:
-    with tracer.start_as_current_span("ping_latency",kind=trace.SpanKind.SERVER,context=trace.set_span_in_context(parent_span)) as span:
+    with tracer.start_as_current_span(
+        "ping_latency",
+        kind=trace.SpanKind.SERVER,
+        context=trace.set_span_in_context(parent_span),
+    ) as span:
         response = ping3.ping(host, timeout=2, size=size)
         if response == None:
             return None
         else:
-            span.set_attribute("ping",response)
+            span.set_attribute("ping", response)
             span.set_attribute("payload_size", size)
             return response
 
 
 @app.get("/latency")
-async def latency_app(tentativas: int = Query(10, ge=1), host: str = Query("8.8.8.8"), size: int = Query(32, ge=1)):
+async def latency_app(
+    tentativas: int = Query(10, ge=1),
+    host: str = Query("8.8.8.8"),
+    size: int = Query(32, ge=1),
+):
     with tracer.start_as_current_span("latency", kind=trace.SpanKind.SERVER) as span:
+        request_count.add(1, attributes={"method:": "GET", "endpoint": "/latency"})
         latency = 0.0
         span.set_attribute("host", host)
         span.set_attribute("NumberOfTrys", tentativas)
         span.set_attribute("payload_size", size)
-    
+
         for i in range(tentativas):
             rtt = await connectionTest(host, span, size)
             if rtt != None:
-                latency += rtt 
-            else: 
-                return {"message": f"Simulated HTTP request to {host} but unable to reach it"}
-        
+                latency += rtt
+            else:
+                return {
+                    "message": f"Simulated HTTP request to {host} but unable to reach it"
+                }
+
         latency = latency / tentativas
 
-        return {"message": f"Simulated HTTP request to {host} for {tentativas} trys", "latency": latency}
+        return {
+            "message": f"Simulated HTTP request to {host} for {tentativas} trys",
+            "latency": latency,
+        }
 
 
-#Bubblesort implementation
+# Bubblesort implementation
 async def bubble(randomList, size: int, parent_span):
-    with tracer.start_as_current_span("bubble", kind=trace.SpanKind.SERVER,context=trace.set_span_in_context(parent_span)) as child:
+    with tracer.start_as_current_span(
+        "bubble",
+        kind=trace.SpanKind.SERVER,
+        context=trace.set_span_in_context(parent_span),
+    ) as child:
         bubbleList = list(randomList)
         n = len(bubbleList)
 
         initial_time = time.time()
         for i in range(n):
-            for j in range(0, n-i-1):
-                if bubbleList[j] < bubbleList[j+1]:
-                    bubbleList[j], bubbleList[j+1] = bubbleList[j+1], bubbleList[j]
+            for j in range(0, n - i - 1):
+                if bubbleList[j] < bubbleList[j + 1]:
+                    bubbleList[j], bubbleList[j + 1] = bubbleList[j + 1], bubbleList[j]
 
         total_time = time.time() - initial_time
         child.set_attribute("sample_size", size)
         child.set_attribute("total_time", total_time)
         return total_time
 
-#Mergesort implementation
-async def mergeSortTracer(randomList,size: int, parent_span):
-    with tracer.start_as_current_span("merge",kind=trace.SpanKind.SERVER, context=trace.set_span_in_context(parent_span)) as child:
+
+# Mergesort implementation
+async def mergeSortTracer(randomList, size: int, parent_span):
+    with tracer.start_as_current_span(
+        "merge",
+        kind=trace.SpanKind.SERVER,
+        context=trace.set_span_in_context(parent_span),
+    ) as child:
         initial_time = time.time()
 
         returnList = mergeSort(randomList)
@@ -126,7 +142,6 @@ async def mergeSortTracer(randomList,size: int, parent_span):
         child.set_attribute("total_time", total_time)
 
         return total_time
-
 
 
 def mergeSort(randomList):
@@ -150,79 +165,102 @@ def merge(left, right):
     while i < len(left) and j < len(right):
         if left[i] < right[j]:
             result.append(left[i])
-            i = i+1
+            i = i + 1
         else:
             result.append(right[j])
-            j = j+1
-    
+            j = j + 1
+
     result.extend(left[i:])
     result.extend(right[j:])
 
     return result
-#Selectionsort implementation
-async def selection(randomList, size:int, parent_span):
-    with tracer.start_as_current_span("selection", kind=trace.SpanKind.SERVER, context=trace.set_span_in_context(parent_span)) as child:
+
+
+# Selectionsort implementation
+async def selection(randomList, size: int, parent_span):
+    with tracer.start_as_current_span(
+        "selection",
+        kind=trace.SpanKind.SERVER,
+        context=trace.set_span_in_context(parent_span),
+    ) as child:
         selectionList = list(randomList)
         n = len(selectionList)
 
         initial_time = time.time()
         for i in range(n):
             smallest_index = i
-            for j in range(i+1, n):
+            for j in range(i + 1, n):
                 if selectionList[j] < selectionList[smallest_index]:
                     smallest_index = j
-            selectionList[i], selectionList[smallest_index] = selectionList[smallest_index], selectionList[i]
+            selectionList[i], selectionList[smallest_index] = (
+                selectionList[smallest_index],
+                selectionList[i],
+            )
 
         total_time = time.time() - initial_time
         child.set_attribute("sample_size", size)
         child.set_attribute("total_time", total_time)
         return total_time
 
-#Function to call the sort methods and collect the metrics
-async def sortComparison(size:int, time_out: float, increment: int,  parent_span):
 
-    with tracer.start_as_current_span("comparison", kind=trace.SpanKind.SERVER, context=trace.set_span_in_context(parent_span)) as parent:
-        #Gradual testing with the bubble sort method
+# Function to call the sort methods and collect the metrics
+async def sortComparison(size: int, time_out: float, increment: int, parent_span):
+
+    with tracer.start_as_current_span(
+        "comparison",
+        kind=trace.SpanKind.SERVER,
+        context=trace.set_span_in_context(parent_span),
+    ) as parent:
+        # Gradual testing with the bubble sort method
         current_size = increment
-        while(current_size <= size):
-            randomList = [random.randint(1,current_size) for _ in range(current_size)]
+        while current_size <= size:
+            randomList = [random.randint(1, current_size) for _ in range(current_size)]
             bubble_time = await bubble(randomList, current_size, parent)
-            if bubble_time > time_out: break
+            if bubble_time > time_out:
+                break
             current_size += increment
         parent.set_attribute("bubble_max_reached_size", current_size)
         parent.set_attribute("bubble_max_reached_time", bubble_time)
-        #Gradual testing with the selection sort method
+        # Gradual testing with the selection sort method
         current_size = increment
-        while(current_size <= size):
-            randomList = [random.randint(1,current_size) for _ in range(current_size)]
+        while current_size <= size:
+            randomList = [random.randint(1, current_size) for _ in range(current_size)]
             selection_time = await selection(randomList, current_size, parent)
-            if selection_time > time_out: break
+            if selection_time > time_out:
+                break
             current_size += increment
         parent.set_attribute("selection_max_reached_size", current_size)
         parent.set_attribute("selection_max_reached_time", selection_time)
-        #Gradual testing with the merge sort method
+        # Gradual testing with the merge sort method
         current_size = increment
-        while(current_size <= size):
-            randomList = [random.randint(1,current_size) for _ in range(current_size)]
+        while current_size <= size:
+            randomList = [random.randint(1, current_size) for _ in range(current_size)]
             merge_time = await mergeSortTracer(randomList, current_size, parent)
-            if merge_time > time_out: break
+            if merge_time > time_out:
+                break
             current_size += increment
         parent.set_attribute("merge_max_reached_size", current_size)
         parent.set_attribute("merge_max_reached_time", merge_time)
-                
 
 
 @app.get("/sort")
-async def sort_app(max_size: int = Query(10000, ge=1), time_out: float = Query(2, ge=0.01), increment: int = Query(500, ge=1)):
-	with tracer.start_as_current_span("sort",kind=trace.SpanKind.SERVER) as span:
-    		await sortComparison(max_size, time_out, increment, span)
-    		return {"message": f"Done sort"}
+async def sort_app(
+    max_size: int = Query(10000, ge=1),
+    time_out: float = Query(2, ge=0.01),
+    increment: int = Query(500, ge=1),
+):
+    request_count.add(1, attributes={"method:": "GET", "endpoint": "/sort"})
 
+    with tracer.start_as_current_span("sort", kind=trace.SpanKind.SERVER) as span:
+        await sortComparison(max_size, time_out, increment, span)
+        return {"message": f"Done sort"}
 
 
 # calculate pi using the monte carlo method for a given number of seconds
 async def calculate_pi(seconds: int, parent_span):
-    with tracer.start_as_current_span("calculate_pi", context=trace.set_span_in_context(parent_span)) as span:
+    with tracer.start_as_current_span(
+        "calculate_pi", context=trace.set_span_in_context(parent_span)
+    ) as span:
         span.set_attribute("seconds", seconds)
         inside = 0
         total = 0
@@ -239,35 +277,45 @@ async def calculate_pi(seconds: int, parent_span):
         span.set_attribute("pi", pi)
         return pi
 
+
 @app.get("/calculate-pi")
-async def calculate_pi_endpoint(seconds: float = Query(1,ge=0.0001)):
+async def calculate_pi_endpoint(seconds: float = Query(1, ge=0.0001)):
     with tracer.start_as_current_span("calculate_pi_endpoint") as span:
         pi = await calculate_pi(seconds, span)
         return {"pi": pi}
 
 
 async def method_1(target: int, parent_span):
-    with tracer.start_as_current_span("method_1", context=trace.set_span_in_context(parent_span)) as span:
+    with tracer.start_as_current_span(
+        "method_1", context=trace.set_span_in_context(parent_span)
+    ) as span:
         span.set_attribute("target", target)
         result = sum(range(target + 1))
         span.set_attribute("result", result)
         return result
 
+
 async def method_2(target: int, parent_span):
-    with tracer.start_as_current_span("method_2", context=trace.set_span_in_context(parent_span)) as span:
+    with tracer.start_as_current_span(
+        "method_2", context=trace.set_span_in_context(parent_span)
+    ) as span:
         span.set_attribute("target", target)
         result = target * (target + 1) // 2
         span.set_attribute("result", result)
         return result
 
+
 async def method_3(target: int, parent_span):
-    with tracer.start_as_current_span("method_3", context=trace.set_span_in_context(parent_span)) as span:
+    with tracer.start_as_current_span(
+        "method_3", context=trace.set_span_in_context(parent_span)
+    ) as span:
         span.set_attribute("target", target)
         result = 0
         for i in range(target + 1):
             result += i
         span.set_attribute("result", result)
         return result
+
 
 @app.get("/sum-of-n-numbers")
 async def sum_of_n_numbers(target: int = Query(100000000, ge=1)):
@@ -278,11 +326,14 @@ async def sum_of_n_numbers(target: int = Query(100000000, ge=1)):
         return {
             "method_1_result": result_1,
             "method_2_result": result_2,
-            "method_3_result": result_3
+            "method_3_result": result_3,
         }
 
+
 async def create_delete_objects_method_1(count: int, parent_span):
-    with tracer.start_as_current_span("create_delete_objects_method_1", context=trace.set_span_in_context(parent_span)) as span:
+    with tracer.start_as_current_span(
+        "create_delete_objects_method_1", context=trace.set_span_in_context(parent_span)
+    ) as span:
         span.set_attribute("object_count", count)
         objects = [object() for _ in range(count)]
         span.set_attribute("object_size", objects.__sizeof__())
@@ -290,8 +341,11 @@ async def create_delete_objects_method_1(count: int, parent_span):
         span.set_attribute("status", "completed")
         return "Method 1 completed"
 
+
 async def create_delete_objects_method_2(count: int, parent_span):
-    with tracer.start_as_current_span("create_delete_objects_method_2", context=trace.set_span_in_context(parent_span)) as span:
+    with tracer.start_as_current_span(
+        "create_delete_objects_method_2", context=trace.set_span_in_context(parent_span)
+    ) as span:
         span.set_attribute("object_count", count)
         objects = []
         for _ in range(count):
@@ -300,7 +354,8 @@ async def create_delete_objects_method_2(count: int, parent_span):
         del objects
         span.set_attribute("status", "completed")
         return "Method 2 completed"
-    
+
+
 @app.get("/object-creation-deletion")
 async def test_object_creation_deletion(count: int = Query(1000000, ge=1)):
     with tracer.start_as_current_span("test_object_creation_deletion") as span:
@@ -310,4 +365,3 @@ async def test_object_creation_deletion(count: int = Query(1000000, ge=1)):
             "method_1_result": result_1,
             "method_2_result": result_2,
         }
-            
