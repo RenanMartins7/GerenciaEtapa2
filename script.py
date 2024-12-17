@@ -4,11 +4,10 @@ import time
 import os
 from concurrent.futures import ThreadPoolExecutor
 
-BASE_URL_SORT = "http://localhost:8000"
-BASE_URL_LATENCY = "http://localhost:8001"
+BASE_URL = "http://localhost:8000"
 
 def test_sort(max_size: int, time_out: float, increment: int):
-    url = f"{BASE_URL_SORT}/sort"
+    url = f"{BASE_URL}/sort"
     params = {"max_size": max_size, "time_out": time_out, "increment": increment}
 
     try:
@@ -18,7 +17,7 @@ def test_sort(max_size: int, time_out: float, increment: int):
         print(f"Sort test: Error: {e}")
 
 def test_latency(tentativas: int, host: str, size: int):
-    url = f"{BASE_URL_LATENCY}/latency"
+    url = f"{BASE_URL}/latency"
     params = {"tentativas": tentativas, "host": host, "size": size}
 
     try:
@@ -28,7 +27,7 @@ def test_latency(tentativas: int, host: str, size: int):
         print(f"Latency test: Error: {e}")
 
 def test_calculate_pi(seconds: float):
-    url = f"{BASE_URL_SORT}/calculate-pi"
+    url = f"{BASE_URL}/calculate-pi"
     params = {"seconds": seconds}
 
     try:
@@ -38,7 +37,7 @@ def test_calculate_pi(seconds: float):
         print(f"Calculate Pi test: Error: {e}")
 
 def test_sum_of_n_numbers(target: int):
-    url = f"{BASE_URL_SORT}/sum-of-n-numbers"
+    url = f"{BASE_URL}/sum-of-n-numbers"
     params = {"target": target}
 
     try:
@@ -48,7 +47,7 @@ def test_sum_of_n_numbers(target: int):
         print(f"Sum of N Numbers test: Error: {e}")
 
 def test_object_creation_deletion(count: int):
-    url = f"{BASE_URL_SORT}/object-creation-deletion"
+    url = f"{BASE_URL}/object-creation-deletion"
     params = {"count": count}
 
     try:

@@ -58,6 +58,10 @@ request_count = meter.create_counter(
     "api_1_total_requests", unit="1", description="Number of processed requests"
 )
 
+rtt_histogram = meter.create_histogram(
+    "api_1_rtt_histogram", unit="ms", description="Round-Trip Time (RTT) per host"
+)
+
 
 def connectionTest(host: str, parent_span, size: int) -> float:
     with tracer.start_as_current_span(
@@ -89,6 +93,7 @@ def latency_app(
 
         for i in range(tentativas):
             rtt = connectionTest(host, span, size)
+            rtt_histogram.record(rtt, attributes={"host":host})
             if rtt != None:
                 latency += rtt
             else:
@@ -282,6 +287,7 @@ def calculate_pi(seconds: int, parent_span):
 def calculate_pi_endpoint(seconds: float = Query(1, ge=0.0001)):
     with tracer.start_as_current_span("calculate_pi_endpoint") as span:
         pi = calculate_pi(seconds, span)
+        request_count.add(1, attributes={"method:": "GET", "endpoint": "/calculate-pi"})
         return {"pi": pi}
 
 
@@ -323,6 +329,7 @@ def sum_of_n_numbers(target: int = Query(100000000, ge=1)):
         result_1 = method_1(target, span)
         result_2 = method_2(target, span)
         result_3 = method_3(target, span)
+        request_count.add(1, attributes={"method:": "GET", "endpoint": "/sum-of-n-numbers"})
         return {
             "method_1_result": result_1,
             "method_2_result": result_2,
@@ -361,6 +368,7 @@ def test_object_creation_deletion(count: int = Query(1000000, ge=1)):
     with tracer.start_as_current_span("test_object_creation_deletion") as span:
         result_1 = create_delete_objects_method_1(count, span)
         result_2 = create_delete_objects_method_2(count, span)
+        request_count.add(1, attributes={"method:": "GET", "endpoint": "/object-creation-deletion"})
         return {
             "method_1_result": result_1,
             "method_2_result": result_2,
