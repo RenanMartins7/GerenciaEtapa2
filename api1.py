@@ -24,6 +24,7 @@ resource = Resource(attributes={SERVICE_NAME: "Api_1"})
 
 os.environ["OTEL_SERVICE_NAME"] = "ap1"
 
+
 traces_endpoint = os.getenv(
     "TRACES_ENDPOINT", "http://op-otel-collector-1:4321/v1/traces"
 )
@@ -53,13 +54,26 @@ tracer = trace.get_tracer("api.tracer")
 
 app = FastAPI()
 
+
 meter = metrics.get_meter("Api_1")
 request_count = meter.create_counter(
     "api_1_total_requests", unit="1", description="Number of processed requests"
 )
 
 rtt_histogram = meter.create_histogram(
-    "api_1_rtt_histogram", unit="ms", description="Round-Trip Time (RTT) per host"
+    "api_1_rtt_histogram", unit="float", description="Round-Trip Time (RTT) per host"
+)
+
+sort_histogram = meter.create_histogram(
+    "api_1_sort_histogram", unit="1", description="Max size of sort list before reaching timeout"
+)
+
+sum_of_n_number_histogram = meter.create_histogram(
+    "api_1_sum_of_n_number_histogram", unit="float", description="Results of the sum of n numbers with 3 methods"
+)
+
+requisition_time_endpoint = meter.create_histogram(
+    "api_1_requisition_time_endpoint", unit="seconds", description="Time to complete a requisition"
 )
 
 
@@ -226,6 +240,7 @@ def sortComparison(size: int, time_out: float, increment: int, parent_span):
             current_size += increment
         parent.set_attribute("bubble_max_reached_size", current_size)
         parent.set_attribute("bubble_max_reached_time", bubble_time)
+        sort_histogram.record(current_size, attributes={"sort_method":"bubble", "max_size_reached": current_size})
         # Gradual testing with the selection sort method
         current_size = increment
         while current_size <= size:
@@ -236,6 +251,7 @@ def sortComparison(size: int, time_out: float, increment: int, parent_span):
             current_size += increment
         parent.set_attribute("selection_max_reached_size", current_size)
         parent.set_attribute("selection_max_reached_time", selection_time)
+        sort_histogram.record(current_size, attributes={"sort_method":"selection", "max_size_reached": current_size})
         # Gradual testing with the merge sort method
         current_size = increment
         while current_size <= size:
@@ -246,6 +262,7 @@ def sortComparison(size: int, time_out: float, increment: int, parent_span):
             current_size += increment
         parent.set_attribute("merge_max_reached_size", current_size)
         parent.set_attribute("merge_max_reached_time", merge_time)
+        sort_histogram.record(current_size, attributes={"sort_method":"merge", "max_size_reached": current_size})
 
 
 @app.get("/sort")
@@ -327,8 +344,11 @@ def method_3(target: int, parent_span):
 def sum_of_n_numbers(target: int = Query(100000000, ge=1)):
     with tracer.start_as_current_span("sum_of_n_numbers") as span:
         result_1 = method_1(target, span)
+        sum_of_n_number_histogram.record(result_1, attributes={"sum":result_1, "method": "method_1"})
         result_2 = method_2(target, span)
+        sum_of_n_number_histogram.record(result_2, attributes={"sum":result_2, "method": "method_2"})
         result_3 = method_3(target, span)
+        sum_of_n_number_histogram.record(result_3, attributes={"sum":result_3, "method": "method_3"})
         request_count.add(1, attributes={"method:": "GET", "endpoint": "/sum-of-n-numbers"})
         return {
             "method_1_result": result_1,
@@ -373,3 +393,57 @@ def test_object_creation_deletion(count: int = Query(1000000, ge=1)):
             "method_1_result": result_1,
             "method_2_result": result_2,
         }
+
+@app.middleware("/latency")
+async def count_active_requests(request:Request, call_next):
+    elapsed_time = time.time()
+    response = await call_next(request)
+    elapsed_time = time.time() - elapsed_time
+    requisition_time_endpoint.record(elapsed_time, attributes={"endpoint":"/latency"})
+    return response
+@app.middleware("/sort")
+async def count_active_requests(request:Request, call_next):
+    elapsed_time = time.time()
+    response = await call_next(request)
+    elapsed_time = time.time() - elapsed_time
+    requisition_time_endpoint.record(elapsed_time, attributes={"endpoint":"/sort"})
+    return response
+@app.middleware("/sum-of-n-numbers")
+async def count_active_requests(request:Request, call_next):
+    elapsed_time = time.time()
+    response = await call_next(request)
+    elapsed_time = time.time() - elapsed_time
+    requisition_time_endpoint.record(elapsed_time, attributes={"endpoint":"/sum-of-n-numbers"})
+    return response
+@app.middleware("/object-creation-deletion")
+async def count_active_requests(request:Request, call_next):
+    elapsed_time = time.time()
+    response = await call_next(request)
+    elapsed_time = time.time() - elapsed_time
+    requisition_time_endpoint.record(elapsed_time, attributes={"endpoint":"/object-creation-deletion"})
+    return response
+
+
+@app.middleware("/calculate-pi")
+async def count_active_requests(request:Request, call_next):
+    elapsed_time = time.time()
+    response = await call_next(request)
+    elapsed_time = time.time() - elapsed_time
+    requisition_time_endpoint.record(elapsed_time, attributes={"endpoint":"/calculate-pi"})
+    return response
+
+
+
+
+"""
+
+
+    
+active_requests = meter.create_gauge(
+    "api_1_active_requests",
+    unit="1",
+    description="Number of active requests"
+)
+
+current_active_requests = 0
+"""
