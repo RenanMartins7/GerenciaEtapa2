@@ -18,10 +18,9 @@ def test_sort(max_size: int, time_out: float, increment: int):
 
 def test_latency(tentativas: int, host: str, size: int):
     url = f"{BASE_URL}/latency"
-    params = {"tentativas": tentativas, "host": host, "size": size}
 
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url)
         print(f"Latency test: Status: {response.status_code}, Response: {response.json()}")
     except Exception as e:
         print(f"Latency test: Error: {e}")
