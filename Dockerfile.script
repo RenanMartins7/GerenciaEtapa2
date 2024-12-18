@@ -1,0 +1,13 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
+RUN pip install requests 
+
+# Copy script
+COPY script.py .
+
+# Command to run script
+ENTRYPOINT ["python", "script.py"]

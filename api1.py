@@ -2,10 +2,12 @@ import os
 import random
 import socket
 import time
-
 import httpx
 import numpy as np
 import ping3
+
+
+from typing import Iterable
 from fastapi import FastAPI, Query, Request
 from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import \
@@ -65,16 +67,31 @@ rtt_histogram = meter.create_histogram(
 )
 
 sort_histogram = meter.create_histogram(
-    "api_1_sort_histogram", unit="1", description="Max size of sort list before reaching timeout"
+    "api_1_sort_histogram",
+    unit="1",
+    description="Max size of sort list before reaching timeout",
 )
 
 sum_of_n_number_histogram = meter.create_histogram(
-    "api_1_sum_of_n_number_histogram", unit="float", description="Results of the sum of n numbers with 3 methods"
+    "api_1_sum_of_n_number_histogram",
+    unit="float",
+    description="Results of the sum of n numbers with 3 methods",
 )
 
-requisition_time_endpoint = meter.create_histogram(
-    "api_1_requisition_time_endpoint", unit="seconds", description="Time to complete a requisition"
+pi_histogram = meter.create_histogram(
+    "api_1_pi_histogram", unit="float", description="Results of pi calculation"
 )
+
+
+active_requests = meter.create_up_down_counter(
+    "api_1_active_requests", unit="1", description="Number of active requests"
+)
+
+def observable_gauge_function(options: metrics.CallbackOptions) -> Iterable[metrics.Observation]:
+    rtt = ping3.ping("8.8.8.8", timeout=2, size=65000)
+    yield metrics.Observation(rtt, {})
+
+gauge_rtt = gauge = meter.create_observable_gauge("api_1_rtt_gauge", [observable_gauge_function])
 
 
 def connectionTest(host: str, parent_span, size: int) -> float:
@@ -107,7 +124,7 @@ def latency_app(
 
         for i in range(tentativas):
             rtt = connectionTest(host, span, size)
-            rtt_histogram.record(rtt, attributes={"host":host})
+            rtt_histogram.record(rtt, attributes={"host": host})
             if rtt != None:
                 latency += rtt
             else:
@@ -240,7 +257,7 @@ def sortComparison(size: int, time_out: float, increment: int, parent_span):
             current_size += increment
         parent.set_attribute("bubble_max_reached_size", current_size)
         parent.set_attribute("bubble_max_reached_time", bubble_time)
-        sort_histogram.record(current_size, attributes={"sort_method":"bubble", "max_size_reached": current_size})
+        sort_histogram.record(current_size, attributes={"sort_method": "bubble"})
         # Gradual testing with the selection sort method
         current_size = increment
         while current_size <= size:
@@ -251,7 +268,7 @@ def sortComparison(size: int, time_out: float, increment: int, parent_span):
             current_size += increment
         parent.set_attribute("selection_max_reached_size", current_size)
         parent.set_attribute("selection_max_reached_time", selection_time)
-        sort_histogram.record(current_size, attributes={"sort_method":"selection", "max_size_reached": current_size})
+        sort_histogram.record(current_size, attributes={"sort_method": "selection"})
         # Gradual testing with the merge sort method
         current_size = increment
         while current_size <= size:
@@ -262,7 +279,7 @@ def sortComparison(size: int, time_out: float, increment: int, parent_span):
             current_size += increment
         parent.set_attribute("merge_max_reached_size", current_size)
         parent.set_attribute("merge_max_reached_time", merge_time)
-        sort_histogram.record(current_size, attributes={"sort_method":"merge", "max_size_reached": current_size})
+        sort_histogram.record(current_size, attributes={"sort_method": "merge"})
 
 
 @app.get("/sort")
@@ -297,13 +314,14 @@ def calculate_pi(seconds: int, parent_span):
         span.set_attribute("inside", inside)
         span.set_attribute("total", total)
         span.set_attribute("pi", pi)
+        pi_histogram.record(pi)
         return pi
 
 
 @app.get("/calculate-pi")
 def calculate_pi_endpoint(seconds: float = Query(1, ge=0.0001)):
     with tracer.start_as_current_span("calculate_pi_endpoint") as span:
-        pi = calculate_pi(seconds, span)
+        pi = calculate_pi(int(seconds), span)
         request_count.add(1, attributes={"method:": "GET", "endpoint": "/calculate-pi"})
         return {"pi": pi}
 
@@ -344,12 +362,14 @@ def method_3(target: int, parent_span):
 def sum_of_n_numbers(target: int = Query(100000000, ge=1)):
     with tracer.start_as_current_span("sum_of_n_numbers") as span:
         result_1 = method_1(target, span)
-        sum_of_n_number_histogram.record(result_1, attributes={"sum":result_1, "method": "method_1"})
+        sum_of_n_number_histogram.record(result_1, attributes={"method": "method_1"})
         result_2 = method_2(target, span)
-        sum_of_n_number_histogram.record(result_2, attributes={"sum":result_2, "method": "method_2"})
+        sum_of_n_number_histogram.record(result_2, attributes={"method": "method_2"})
         result_3 = method_3(target, span)
-        sum_of_n_number_histogram.record(result_3, attributes={"sum":result_3, "method": "method_3"})
-        request_count.add(1, attributes={"method:": "GET", "endpoint": "/sum-of-n-numbers"})
+        sum_of_n_number_histogram.record(result_3, attributes={"method": "method_3"})
+        request_count.add(
+            1, attributes={"method:": "GET", "endpoint": "/sum-of-n-numbers"}
+        )
         return {
             "method_1_result": result_1,
             "method_2_result": result_2,
@@ -388,51 +408,21 @@ def test_object_creation_deletion(count: int = Query(1000000, ge=1)):
     with tracer.start_as_current_span("test_object_creation_deletion") as span:
         result_1 = create_delete_objects_method_1(count, span)
         result_2 = create_delete_objects_method_2(count, span)
-        request_count.add(1, attributes={"method:": "GET", "endpoint": "/object-creation-deletion"})
+        request_count.add(
+            1, attributes={"method:": "GET", "endpoint": "/object-creation-deletion"}
+        )
         return {
             "method_1_result": result_1,
             "method_2_result": result_2,
         }
 
-@app.middleware("/latency")
-async def count_active_requests(request:Request, call_next):
-    elapsed_time = time.time()
-    response = await call_next(request)
-    elapsed_time = time.time() - elapsed_time
-    requisition_time_endpoint.record(elapsed_time, attributes={"endpoint":"/latency"})
-    return response
-@app.middleware("/sort")
-async def count_active_requests(request:Request, call_next):
-    elapsed_time = time.time()
-    response = await call_next(request)
-    elapsed_time = time.time() - elapsed_time
-    requisition_time_endpoint.record(elapsed_time, attributes={"endpoint":"/sort"})
-    return response
-@app.middleware("/sum-of-n-numbers")
-async def count_active_requests(request:Request, call_next):
-    elapsed_time = time.time()
-    response = await call_next(request)
-    elapsed_time = time.time() - elapsed_time
-    requisition_time_endpoint.record(elapsed_time, attributes={"endpoint":"/sum-of-n-numbers"})
-    return response
-@app.middleware("/object-creation-deletion")
-async def count_active_requests(request:Request, call_next):
-    elapsed_time = time.time()
-    response = await call_next(request)
-    elapsed_time = time.time() - elapsed_time
-    requisition_time_endpoint.record(elapsed_time, attributes={"endpoint":"/object-creation-deletion"})
-    return response
 
-
-@app.middleware("/calculate-pi")
-async def count_active_requests(request:Request, call_next):
-    elapsed_time = time.time()
+@app.middleware("http")
+async def count_active_requests(request: Request, call_next):
+    active_requests.add(1)
     response = await call_next(request)
-    elapsed_time = time.time() - elapsed_time
-    requisition_time_endpoint.record(elapsed_time, attributes={"endpoint":"/calculate-pi"})
+    active_requests.add(-1)
     return response
-
-
 
 
 """
