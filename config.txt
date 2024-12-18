@@ -1,6 +1,6 @@
 trys=10
 host=8.8.8.8
-requests=5
+requests=100
 max_size=10000
 time_out=1
 increment=500
@@ -8,4 +8,5 @@ payload_size=65000
 pi_seconds = 5
 target=1000000
 object_count=100000
+functions=latency,calculate_pi
 

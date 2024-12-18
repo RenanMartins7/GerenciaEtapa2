@@ -1,0 +1,51 @@
+# https://kubernetes.io/docs/concepts/configuration/configmap/
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: requests-config
+  namespace: opentelemetry
+data:
+  config.txt: |
+    trys=10
+    host=8.8.8.8
+    requests=100
+    max_size=10000
+    time_out=1
+    increment=500
+    payload_size=65000
+    pi_seconds = 5
+    target=1000000
+    object_count=100000
+    functions=latency,calculate_pi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client-requests
+  namespace: opentelemetry
+  labels:
+    app: client-requests
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: client-requests
+  template:
+    metadata:
+      labels:
+        app: client-requests
+    spec:
+      containers:
+        - name: client-requests
+          image: matheusmcosta/requests-client
+          env:
+            - name: API_ENDPOINT
+              value: "http://api-endpoint:8000"
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/config.txt
+              subPath: config.txt
+      volumes:
+        - name: config-volume
+          configMap:
+            name: requests-config
