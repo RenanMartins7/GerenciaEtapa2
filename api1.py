@@ -2,6 +2,7 @@ import os
 import random
 import socket
 import time
+from typing import Iterable
 
 import httpx
 import numpy as np
@@ -80,9 +81,20 @@ pi_histogram = meter.create_histogram(
     "api_1_pi_histogram", unit="float", description="Results of pi calculation"
 )
 
-
 active_requests = meter.create_up_down_counter(
     "api_1_active_requests", unit="1", description="Number of active requests"
+)
+
+
+def observable_gauge_function(
+    options: metrics.CallbackOptions,
+) -> Iterable[metrics.Observation]:
+    rtt = ping3.ping("8.8.8.8", timeout=2, size=65000)
+    yield metrics.Observation(rtt, {})
+
+
+gauge_rtt = gauge = meter.create_observable_gauge(
+    "api_1_rtt_gauge", [observable_gauge_function]
 )
 
 

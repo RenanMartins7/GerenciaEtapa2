@@ -37,7 +37,7 @@ services:
   api_1:
     #container_name: op-api_1-1
     build:
-        context: .
+        #context: .
         dockerfile: DockerfileApi1
     ports:
       - "8000:8000"

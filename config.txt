@@ -8,5 +8,5 @@ payload_size=65000
 pi_seconds = 5
 target=1000000
 object_count=100000
-functions=latency,calculate_pi
+functions=latency,calculate_pi, sort,sum_of_n_numbers, object_creation_deletion
 
