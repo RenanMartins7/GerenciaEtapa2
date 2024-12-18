@@ -54,22 +54,21 @@ spec:
         app: collector
     spec:
       containers:
-        - name: collector-container
-          image: otel/opentelemetry-collector:latest
-          # command: ["otelcol"] # Replace with the binary name, if required
-          args: ["--config=/etc/otel/config.yaml"]
-          ports:
-            - containerPort: 4320 # OTLP gRPC
-            - containerPort: 4321 # OTLP HTTP
-            - containerPort: 9464
-          volumeMounts:
-            - name: config-volume
-              mountPath: /etc/otel/
-      volumes:
+      - name: collector-container
+        image: otel/opentelemetry-collector:latest
+        # command: ["otelcol"] # Replace with the binary name, if required
+        args: [ "--config=/etc/otel/config.yaml" ]
+        ports:
+        - containerPort: 4320 # OTLP gRPC
+        - containerPort: 4321 # OTLP HTTP
+        - containerPort: 9464
+        volumeMounts:
         - name: config-volume
-          configMap:
-            name: collector-config
-
+          mountPath: /etc/otel/
+      volumes:
+      - name: config-volume
+        configMap:
+          name: collector-config
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -89,14 +88,21 @@ spec:
         app: jaeger
     spec:
       containers:
-        - name: jaeger-container
-          image: jaegertracing/all-in-one:latest
-          ports:
-            - containerPort: 4317 # otlp grpc
-            - containerPort: 4318 # otlp http
-            - containerPort: 6831
-              protocol: UDP
-            - containerPort: 16686
+      - name: jaeger-container
+        image: jaegertracing/all-in-one:latest
+        resources:
+          limits:
+            cpu: "1"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "128Mi"
+        ports:
+        - containerPort: 4317 # otlp grpc
+        - containerPort: 4318 # otlp http
+        - containerPort: 6831
+          protocol: UDP
+        - containerPort: 16686
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -116,13 +122,22 @@ spec:
         app: api-endpoint
     spec:
       containers:
-        - name: api-endpoint-container
-          image: matheusmcosta/gerencia2
-          env:
-            - name: METRICS_ENDPOINT
-              value: http://collector:4321/v1/metrics
-            - name: TRACES_ENDPOINT
-              value: http://collector:4321/v1/traces
-          ports:
-            - containerPort: 8000
+      - name: api-endpoint-container
+        image: matheusmcosta/gerencia2
+        resources:
+          limits:
+            cpu: "1"
+            memory: "256Mi"
+          requests:
+            cpu: "200m"
+            memory: "128Mi"
+        env:
+        - name: METRICS_ENDPOINT
+          value: http://collector:4321/v1/metrics
+        - name: TRACES_ENDPOINT
+          value: http://collector:4321/v1/traces
+        ports:
+        - containerPort: 8000
 ---
+
+
