@@ -1,7 +1,16 @@
+import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
+
+# Configure logging for k8s
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 BASE_URL = os.getenv("API_ENDPOINT", "http://localhost:8000")
 
@@ -12,9 +21,11 @@ def test_sort(max_size: int, time_out: float, increment: int):
 
     try:
         response = requests.get(url, params=params)
-        print(f"Sort test: Status: {response.status_code}, Response: {response.json()}")
+        logger.info(
+            f"Sort test: Status: {response.status_code}, Response: {response.json()}"
+        )
     except Exception as e:
-        print(f"Sort test: Error: {e}")
+        logger.error(f"Sort test: Error: {e}")
 
 
 def test_latency():
@@ -22,11 +33,11 @@ def test_latency():
 
     try:
         response = requests.get(url)
-        print(
+        logger.info(
             f"Latency test: Status: {response.status_code}, Response: {response.json()}"
         )
     except Exception as e:
-        print(f"Latency test: Error: {e}")
+        logger.error(f"Latency test: Error: {e}")
 
 
 def test_calculate_pi(seconds: float):
@@ -35,11 +46,11 @@ def test_calculate_pi(seconds: float):
 
     try:
         response = requests.get(url, params=params)
-        print(
+        logger.info(
             f"Calculate Pi test: Status: {response.status_code}, Response: {response.json()}"
         )
     except Exception as e:
-        print(f"Calculate Pi test: Error: {e}")
+        logger.error(f"Calculate Pi test: Error: {e}")
 
 
 def test_sum_of_n_numbers(target: int):
@@ -48,11 +59,11 @@ def test_sum_of_n_numbers(target: int):
 
     try:
         response = requests.get(url, params=params)
-        print(
+        logger.info(
             f"Sum of N Numbers test: Status: {response.status_code}, Response: {response.json()}"
         )
     except Exception as e:
-        print(f"Sum of N Numbers test: Error: {e}")
+        logger.error(f"Sum of N Numbers test: Error: {e}")
 
 
 def test_object_creation_deletion(count: int):
@@ -61,11 +72,11 @@ def test_object_creation_deletion(count: int):
 
     try:
         response = requests.get(url, params=params)
-        print(
+        logger.info(
             f"Object Creation/Deletion test: Status: {response.status_code}, Response: {response.json()}"
         )
     except Exception as e:
-        print(f"Object Creation/Deletion test: Error: {e}")
+        logger.error(f"Object Creation/Deletion test: Error: {e}")
 
 
 def read_config(file_path="config.txt"):
@@ -90,7 +101,7 @@ def run_tests_in_parallel(test_functions):
             try:
                 future.result()
             except Exception as e:
-                print(f"Error in parallel execution: {e}")
+                logger.error(f"Error in parallel execution: {e}")
 
 
 if __name__ == "__main__":
@@ -134,8 +145,8 @@ if __name__ == "__main__":
                     lambda: test_object_creation_deletion(object_count)
                 )
 
-        print("Running tests in parallel...")
+        logger.info("Running tests in parallel...")
         run_tests_in_parallel(test_functions)
 
     except Exception as e:
-        print(f"Erro ao executar o script: {e}")
+        logger.error(f"Erro ao executar o script: {e}")
